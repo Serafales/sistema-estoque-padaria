@@ -1,0 +1,30 @@
+[
+  {
+    "nome": "ABSORVENTE COM ABAS SECA ALWAYS",
+    "ean": "7500435127226",
+    "fornecedor": "Fornecedor A",
+    "estoque_atual": 15,
+    "estoque_alvo": 20
+  },
+  {
+    "nome": "ABSORVENTE COM ABAS SECA INTIMUS",
+    "ean": "7896007540631",
+    "fornecedor": "Fornecedor B",
+    "estoque_atual": 8,
+    "estoque_alvo": 10
+  },
+  {
+    "nome": "ABSORVENTE COM ABAS SUAVE SEMPRE LIVRE",
+    "ean": "7891010503024",
+    "fornecedor": "Fornecedor A",
+    "estoque_atual": 30,
+    "estoque_alvo": 25
+  },
+  {
+    "nome": "FARINHA DE TRIGO 1KG",
+    "ean": "7891234567890",
+    "fornecedor": "Moinho Central",
+    "estoque_atual": 5,
+    "estoque_alvo": 50
+  }
+]

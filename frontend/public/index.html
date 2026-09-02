@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Estoque - Padaria</title>
+    <style>
+        body { background-color: #121212; color: #ffffff; font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+        h1 { color: #4CAF50; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .alerta-card { background-color: #2c2c2c; border-left: 5px solid #ff4444; padding: 15px; margin-bottom: 10px; border-radius: 4px; }
+        .alerta-texto { font-size: 1.1em; margin: 0; }
+        .ok { color: #4CAF50; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Painel de Alertas de Estoque</h1>
+        <p>Verificação automática baseada no estoque alvo.</p>
+    </header>
+
+    <main>
+        <section id="lista-alertas" aria-live="polite">
+            <p>Carregando dados do servidor...</p>
+        </section>
+    </main>
+
+    <script>
+        fetch('http://localhost:3000/alertas')
+            .then(response => response.json())
+            .then(alertas => {
+                const container = document.getElementById('lista-alertas');
+                container.innerHTML = '';
+
+                if (alertas.length === 0) {
+                    container.innerHTML = '<p class="ok">✅ Estoque abastecido. Nenhum pedido necessário no momento.</p>';
+                    return;
+                }
+
+                alertas.forEach(alerta => {
+                    const div = document.createElement('div');
+                    div.className = 'alerta-card';
+                    div.innerHTML = `<p class="alerta-texto">⚠️ ${alerta.mensagem}</p>`;
+                    container.appendChild(div);
+                });
+            })
+            .catch(error => {
+                document.getElementById('lista-alertas').innerHTML = `<p style="color: #ff4444;">❌ Erro ao conectar com o servidor.</p>`;
+            });
+    </script>
+</body>
+</html>
