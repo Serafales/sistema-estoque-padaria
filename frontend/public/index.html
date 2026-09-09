@@ -24,28 +24,46 @@
         </section>
     </main>
 
-    <script>
-        fetch('http://localhost:3000/alertas')
-            .then(response => response.json())
-            .then(alertas => {
-                const container = document.getElementById('lista-alertas');
-                container.innerHTML = '';
+<script>
+        function carregarAlertas() {
+            fetch('http://localhost:3000/alertas')
+                .then(response => response.json())
+                .then(alertas => {
+                    const container = document.getElementById('lista-alertas');
+                    container.innerHTML = '';
 
-                if (alertas.length === 0) {
-                    container.innerHTML = '<p class="ok">✅ Estoque abastecido. Nenhum pedido necessário no momento.</p>';
-                    return;
-                }
+                    if (alertas.length === 0) {
+                        container.innerHTML = '<p class="ok">✅ Estoque abastecido. Nenhum pedido necessário no momento.</p>';
+                        return;
+                    }
 
-                alertas.forEach(alerta => {
-                    const div = document.createElement('div');
-                    div.className = 'alerta-card';
-                    div.innerHTML = `<p class="alerta-texto">⚠️ ${alerta.mensagem}</p>`;
-                    container.appendChild(div);
+                    alertas.forEach(alerta => {
+                        const div = document.createElement('div');
+                        div.className = 'alerta-card';
+                        div.innerHTML = `
+                            <p class="alerta-texto">⚠️ ALERTA: Pedir <strong>${alerta.quantidadePedir}x</strong> unidades de "${alerta.nome}" para o fornecedor ${alerta.fornecedor}. (EAN: ${alerta.ean})</p>
+                            <button onclick="reporEstoque('${alerta.ean}')" style="margin-top: 10px; padding: 8px 12px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                Simular Chegada de Estoque
+                            </button>
+                        `;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(error => {
+                    document.getElementById('lista-alertas').innerHTML = `<p style="color: #ff4444;">❌ Erro ao conectar com o servidor.</p>`;
                 });
+        }
+
+        function reporEstoque(ean) {
+            fetch(`http://localhost:3000/repor/${ean}`, {
+                method: 'PUT'
             })
-            .catch(error => {
-                document.getElementById('lista-alertas').innerHTML = `<p style="color: #ff4444;">❌ Erro ao conectar com o servidor.</p>`;
+            .then(response => response.json())
+            .then(data => {
+                carregarAlertas();
             });
+        }
+        carregarAlertas();
     </script>
 </body>
 </html>
