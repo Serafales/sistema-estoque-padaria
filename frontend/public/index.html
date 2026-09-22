@@ -18,9 +18,29 @@
         <p>Verificação automática baseada no estoque alvo.</p>
     </header>
 
+    <section style="background-color: #2c2c2c; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+        <h2>Importar Cadastros</h2>
+        <p>Envie uma planilha com as colunas: Nome, EAN, Fornecedor, EstoqueAtual, EstoqueAlvo</p>
+        <input type="file" id="arquivoExcel" accept=".xlsx, .xls" style="margin-right: 10px;">
+        <button onclick="enviarPlanilha()" style="padding: 8px 12px; background-color: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Importar Dados
+        </button>
+    </section>
+
     <main>
         <section id="lista-alertas" aria-live="polite">
             <p>Carregando dados do servidor...</p>
+        </section>
+        <!-- Botão e seção do estoque completo -->
+        <hr style="border-color: #333; margin: 30px 0 20px 0;">
+        <button onclick="toggleEstoque()" style="padding: 10px 15px; background-color: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; width: 100%; font-size: 1.1em;">
+            📦 Mostrar / Ocultar Estoque Completo
+        </button>
+        
+        <!-- style="display: none;" mantém oculto por padrão -->
+        <section id="secao-estoque" style="display: none; margin-top: 20px;">
+            <h2>Inventário Completo</h2>
+            <div id="lista-todos-produtos"></div>
         </section>
     </main>
 
@@ -62,6 +82,70 @@
             .then(data => {
                 carregarAlertas();
             });
+        }
+        
+        function enviarPlanilha() {
+            const input = document.getElementById('arquivoExcel');
+            const arquivo = input.files[0];
+
+            if (!arquivo) {
+                alert("Por favor, selecione um arquivo primeiro!");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('planilha', arquivo);
+
+            alert("Enviando planilha... Aguarde.");
+
+            fetch('http://localhost:3000/importar', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.mensagem || data.erro);
+                input.value = "";
+                carregarAlertas();
+            })
+            .catch(error => {
+                alert("Erro ao enviar arquivo.");
+            });
+        }
+        // Função que mostra ou esconde a seção
+        function toggleEstoque() {
+            const secao = document.getElementById('secao-estoque');
+            if (secao.style.display === 'none') {
+                secao.style.display = 'block';
+                carregarTodosProdutos(); // Só busca no banco quando o usuário abre a aba
+            } else {
+                secao.style.display = 'none';
+            }
+        }
+
+        // Função que busca os dados da rota /produtos e monta a lista
+        function carregarTodosProdutos() {
+            document.getElementById('lista-todos-produtos').innerHTML = '<p>Carregando inventário...</p>';
+            
+            fetch('http://localhost:3000/produtos')
+                .then(response => response.json())
+                .then(produtos => {
+                    const container = document.getElementById('lista-todos-produtos');
+                    container.innerHTML = '';
+                    
+                    produtos.forEach(p => {
+                        const div = document.createElement('div');
+                        div.style = "background-color: #1e1e1e; border-left: 5px solid #4CAF50; padding: 10px; margin-bottom: 8px; border-radius: 4px;";
+                        div.innerHTML = `
+                            <p style="margin: 0; font-size: 1.05em;"><strong>${p.nome}</strong> (EAN: ${p.ean})</p>
+                            <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #aaa;">Fornecedor: ${p.fornecedor} | Estoque Atual: <strong>${p.estoque_atual}</strong> / Alvo: ${p.estoque_alvo}</p>
+                        `;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(erro => {
+                    document.getElementById('lista-todos-produtos').innerHTML = '<p style="color: red;">Erro ao carregar o estoque.</p>';
+                });
         }
         carregarAlertas();
     </script>
