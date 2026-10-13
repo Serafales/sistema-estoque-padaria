@@ -10,41 +10,80 @@
         .alerta-card { background-color: #2c2c2c; border-left: 5px solid #ff4444; padding: 15px; margin-bottom: 10px; border-radius: 4px; }
         .alerta-texto { font-size: 1.1em; margin: 0; }
         .ok { color: #4CAF50; font-weight: bold; }
+        
+        /* Estilos do formulário */
+        .form-input { padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; margin-bottom: 10px; margin-right: 5px;}
+        .form-input[readonly] { background: #555; cursor: not-allowed; }
+        .btn-acao { padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; margin-right: 5px; }
+        .btn-editar { background-color: #FFC107; color: #000; }
+        .btn-excluir { background-color: #f44336; color: white; }
+        .btn-toggle { padding: 10px 15px; background-color: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; width: 100%; font-size: 1.1em; text-align: left; margin-bottom: 15px; font-weight: bold; }
     </style>
 </head>
 <body>
     <header>
         <h1>Painel de Alertas de Estoque</h1>
-        <p>Verificação automática baseada no estoque alvo.</p>
+        <p>Verificação automática baseada na meta de estoque.</p>
     </header>
-
-    <section style="background-color: #2c2c2c; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
-        <h2>Importar Cadastros</h2>
-        <p>Envie uma planilha com as colunas: Nome, EAN, Fornecedor, EstoqueAtual, EstoqueAlvo</p>
-        <input type="file" id="arquivoExcel" accept=".xlsx, .xls" style="margin-right: 10px;">
-        <button onclick="enviarPlanilha()" style="padding: 8px 12px; background-color: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">
-            Importar Dados
-        </button>
-    </section>
 
     <main>
         <section id="lista-alertas" aria-live="polite">
-            <p>Carregando dados do servidor...</p>
+            <p>Carregando dados...</p>
         </section>
-        <!-- Botão e seção do estoque completo -->
-        <hr style="border-color: #333; margin: 30px 0 20px 0;">
-        <button onclick="toggleEstoque()" style="padding: 10px 15px; background-color: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; width: 100%; font-size: 1.1em;">
-            📦 Mostrar / Ocultar Estoque Completo
-        </button>
         
-        <!-- style="display: none;" mantém oculto por padrão -->
+        <hr style="border-color: #333; margin: 30px 0 20px 0;">
+
+        <!-- Importação -->
+        <button class="btn-toggle" onclick="toggleImportacao()">
+            Importar Planilha
+        </button>
+        <section id="secao-importacao" style="display: none; background-color: #2c2c2c; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+            <h2 style="margin-top: 0;">Importar Cadastros</h2>
+            <p>Formato esperado (Colunas): Nome, EAN, Fornecedor, EstoqueAtual, EstoqueAlvo</p>
+            <input type="file" id="arquivoExcel" accept=".xlsx, .xls" style="margin-right: 10px; margin-bottom: 10px;">
+            <button onclick="enviarPlanilha()" style="padding: 8px 12px; background-color: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Processar Arquivo
+            </button>
+        </section>
+
+        <!-- Estoque Completo -->
+        <button class="btn-toggle" onclick="toggleEstoque()">
+            Estoque Completo
+        </button>
         <section id="secao-estoque" style="display: none; margin-top: 20px;">
             <h2>Inventário Completo</h2>
+            
+            <div id="form-container" style="background: #2a2a2a; padding: 15px; margin-bottom: 20px; border-radius: 4px; border: 1px solid #444;">
+                <h3 id="form-titulo" style="margin-top: 0;">Novo Produto</h3>
+                <form id="form-produto">
+                    <input type="text" id="input-nome" class="form-input" placeholder="Nome do Produto" required style="width: calc(40% - 15px);">
+                    <input type="text" id="input-ean" class="form-input" placeholder="Código EAN" required style="width: calc(20% - 15px);">
+                    <input type="text" id="input-fornecedor" class="form-input" placeholder="Fornecedor" required style="width: calc(30% - 15px);">
+                    <input type="number" id="input-atual" class="form-input" placeholder="Atual" required style="width: 80px;">
+                    <input type="number" id="input-alvo" class="form-input" placeholder="Alvo" required style="width: 80px;">
+                    
+                    <div style="margin-top: 10px;">
+                        <button type="submit" id="btn-salvar" style="padding: 8px 15px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">Salvar</button>
+                        <button type="button" id="btn-cancelar" style="display:none; padding: 8px 15px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="resetarFormulario()">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+
             <div id="lista-todos-produtos"></div>
         </section>
+
+        <!-- Histórico -->
+        <button class="btn-toggle" onclick="toggleHistorico()">
+            Histórico de Movimentações
+        </button>
+        <section id="secao-historico" style="display: none; margin-top: 20px;">
+            <h2>Últimas Reposições</h2>
+            <div id="lista-historico"></div>
+        </section>
+
     </main>
 
-<script>
+    <script>
         function carregarAlertas() {
             fetch('http://localhost:3000/alertas')
                 .then(response => response.json())
@@ -53,7 +92,7 @@
                     container.innerHTML = '';
 
                     if (alertas.length === 0) {
-                        container.innerHTML = '<p class="ok">✅ Estoque abastecido. Nenhum pedido necessário no momento.</p>';
+                        container.innerHTML = '<p class="ok">Estoque em dia. Nenhum alerta pendente.</p>';
                         return;
                     }
 
@@ -61,26 +100,52 @@
                         const div = document.createElement('div');
                         div.className = 'alerta-card';
                         div.innerHTML = `
-                            <p class="alerta-texto">⚠️ ALERTA: Pedir <strong>${alerta.quantidadePedir}x</strong> unidades de "${alerta.nome}" para o fornecedor ${alerta.fornecedor}. (EAN: ${alerta.ean})</p>
-                            <button onclick="reporEstoque('${alerta.ean}')" style="margin-top: 10px; padding: 8px 12px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                                Simular Chegada de Estoque
-                            </button>
+                            <p class="alerta-texto">FALTA DE ESTOQUE: Pedir <strong>${alerta.quantidadePedir}x</strong> de "${alerta.nome}" (Fornecedor: ${alerta.fornecedor} | EAN: ${alerta.ean})</p>
+                            
+                            <div style="margin-top: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <input type="number" id="qtd-${alerta.ean}" class="form-input" placeholder="Qtd" style="width: 70px; margin: 0;">
+                                <select id="tipo-${alerta.ean}" class="form-input" style="margin: 0; padding: 7px;">
+                                    <option value="adicionar">Somar ao Estoque (+)</option>
+                                    <option value="montante">Novo Estoque Total (=)</option>
+                                </select>
+                                <button onclick="reporEstoque('${alerta.ean}')" style="padding: 8px 12px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                                    Confirmar
+                                </button>
+                                <span style="font-size: 0.85em; color: #888;">(Vazio = preencher até o alvo)</span>
+                            </div>
                         `;
                         container.appendChild(div);
                     });
                 })
                 .catch(error => {
-                    document.getElementById('lista-alertas').innerHTML = `<p style="color: #ff4444;">❌ Erro ao conectar com o servidor.</p>`;
+                    document.getElementById('lista-alertas').innerHTML = `<p style="color: #ff4444;">Erro ao conectar com o banco de dados.</p>`;
                 });
         }
 
         function reporEstoque(ean) {
+            const inputQtd = document.getElementById(`qtd-${ean}`).value;
+            const inputTipo = document.getElementById(`tipo-${ean}`).value;
+
+            const payload = {};
+            if (inputQtd !== "") {
+                payload.quantidade = parseInt(inputQtd);
+                payload.tipo = inputTipo;
+            }
+
             fetch(`http://localhost:3000/repor/${ean}`, {
-                method: 'PUT'
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             })
             .then(response => response.json())
             .then(data => {
                 carregarAlertas();
+                if(document.getElementById('secao-estoque').style.display === 'block'){
+                    carregarTodosProdutos(); 
+                }
+                if(document.getElementById('secao-historico').style.display === 'block'){
+                    carregarHistorico(); 
+                }
             });
         }
         
@@ -89,14 +154,13 @@
             const arquivo = input.files[0];
 
             if (!arquivo) {
-                alert("Por favor, selecione um arquivo primeiro!");
+                alert("Selecione um arquivo antes de continuar.");
                 return;
             }
 
             const formData = new FormData();
             formData.append('planilha', arquivo);
-
-            alert("Enviando planilha... Aguarde.");
+            alert("Processando planilha...");
 
             fetch('http://localhost:3000/importar', {
                 method: 'POST',
@@ -107,25 +171,71 @@
                 alert(data.mensagem || data.erro);
                 input.value = "";
                 carregarAlertas();
+                if(document.getElementById('secao-estoque').style.display === 'block'){
+                    carregarTodosProdutos();
+                }
             })
-            .catch(error => {
-                alert("Erro ao enviar arquivo.");
-            });
+            .catch(error => alert("Erro ao importar arquivo."));
         }
-        // Função que mostra ou esconde a seção
+
+        function toggleImportacao() {
+            const secao = document.getElementById('secao-importacao');
+            secao.style.display = secao.style.display === 'none' ? 'block' : 'none';
+        }
+
         function toggleEstoque() {
             const secao = document.getElementById('secao-estoque');
             if (secao.style.display === 'none') {
                 secao.style.display = 'block';
-                carregarTodosProdutos(); // Só busca no banco quando o usuário abre a aba
+                carregarTodosProdutos();
             } else {
                 secao.style.display = 'none';
             }
         }
 
-        // Função que busca os dados da rota /produtos e monta a lista
+        function toggleHistorico() {
+            const secao = document.getElementById('secao-historico');
+            if (secao.style.display === 'none') {
+                secao.style.display = 'block';
+                carregarHistorico();
+            } else {
+                secao.style.display = 'none';
+            }
+        }
+
+        function carregarHistorico() {
+            document.getElementById('lista-historico').innerHTML = '<p>Buscando registros...</p>';
+            
+            fetch('http://localhost:3000/historico')
+                .then(response => response.json())
+                .then(historico => {
+                    const container = document.getElementById('lista-historico');
+                    container.innerHTML = '';
+                    
+                    if (historico.length === 0) {
+                        container.innerHTML = '<p style="color: #aaa;">Nenhum registro encontrado.</p>';
+                        return;
+                    }
+
+                    historico.forEach(item => {
+                        const dataLocal = new Date(item.data_hora + 'Z').toLocaleString('pt-BR');
+                        const div = document.createElement('div');
+                        div.style = "background-color: #1e1e1e; border-left: 5px solid #2196F3; padding: 10px; margin-bottom: 8px; border-radius: 4px;";
+                        div.innerHTML = `
+                            <p style="margin: 0; font-size: 0.9em; color: #888;">${dataLocal}</p>
+                            <p style="margin: 5px 0 0 0; font-size: 1.05em;"><strong>${item.nome_produto}</strong></p>
+                            <p style="margin: 2px 0 0 0; font-size: 0.95em; color: #ccc;">Ação: ${item.acao}</p>
+                        `;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(erro => {
+                    document.getElementById('lista-historico').innerHTML = '<p style="color: red;">Erro ao carregar os dados.</p>';
+                });
+        }
+
         function carregarTodosProdutos() {
-            document.getElementById('lista-todos-produtos').innerHTML = '<p>Carregando inventário...</p>';
+            document.getElementById('lista-todos-produtos').innerHTML = '<p>Carregando produtos...</p>';
             
             fetch('http://localhost:3000/produtos')
                 .then(response => response.json())
@@ -138,15 +248,100 @@
                         div.style = "background-color: #1e1e1e; border-left: 5px solid #4CAF50; padding: 10px; margin-bottom: 8px; border-radius: 4px;";
                         div.innerHTML = `
                             <p style="margin: 0; font-size: 1.05em;"><strong>${p.nome}</strong> (EAN: ${p.ean})</p>
-                            <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #aaa;">Fornecedor: ${p.fornecedor} | Estoque Atual: <strong>${p.estoque_atual}</strong> / Alvo: ${p.estoque_alvo}</p>
+                            <p style="margin: 5px 0 10px 0; font-size: 0.9em; color: #aaa;">Fornecedor: ${p.fornecedor} | Atual: <strong>${p.estoque_atual}</strong> / Alvo: ${p.estoque_alvo}</p>
+                            <button class="btn-acao btn-editar" onclick="prepararEdicao('${p.ean}', '${p.nome}', '${p.fornecedor}', ${p.estoque_atual}, ${p.estoque_alvo})">Editar</button>
+                            <button class="btn-acao btn-excluir" onclick="excluirProduto('${p.ean}')">Excluir</button>
                         `;
                         container.appendChild(div);
                     });
                 })
                 .catch(erro => {
-                    document.getElementById('lista-todos-produtos').innerHTML = '<p style="color: red;">Erro ao carregar o estoque.</p>';
+                    document.getElementById('lista-todos-produtos').innerHTML = '<p style="color: red;">Erro ao consultar produtos.</p>';
                 });
         }
+
+        document.getElementById('form-produto').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const produto = {
+                nome: document.getElementById('input-nome').value,
+                ean: document.getElementById('input-ean').value,
+                fornecedor: document.getElementById('input-fornecedor').value,
+                estoque_atual: document.getElementById('input-atual').value,
+                estoque_alvo: document.getElementById('input-alvo').value
+            };
+
+            const isEditando = document.getElementById('input-ean').hasAttribute('readonly');
+            const url = isEditando ? `http://localhost:3000/produtos/${produto.ean}` : 'http://localhost:3000/produtos';
+            const metodo = isEditando ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method: metodo,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(produto)
+                });
+                
+                const resultado = await response.json();
+                
+                if (response.ok) {
+                    alert(resultado.mensagem);
+                    resetarFormulario();
+                    carregarTodosProdutos();
+                    carregarAlertas();
+                } else {
+                    alert(resultado.erro);
+                }
+            } catch (error) {
+                alert('Erro de comunicação.');
+            }
+        });
+
+        function prepararEdicao(ean, nome, fornecedor, atual, alvo) {
+            document.getElementById('form-titulo').innerText = 'Editar Produto';
+            
+            const inputEan = document.getElementById('input-ean');
+            inputEan.value = ean;
+            inputEan.setAttribute('readonly', true); 
+            
+            document.getElementById('input-nome').value = nome;
+            document.getElementById('input-fornecedor').value = fornecedor;
+            document.getElementById('input-atual').value = atual;
+            document.getElementById('input-alvo').value = alvo;
+            
+            document.getElementById('btn-cancelar').style.display = 'inline-block';
+            document.getElementById('btn-salvar').innerText = 'Salvar Alterações';
+            
+            document.getElementById('form-container').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function excluirProduto(ean) {
+            if (confirm(`Confirmar exclusão do EAN ${ean}?`)) {
+                try {
+                    const response = await fetch(`http://localhost:3000/produtos/${ean}`, { method: 'DELETE' });
+                    const resultado = await response.json();
+                    
+                    if (response.ok) {
+                        alert(resultado.mensagem);
+                        carregarTodosProdutos();
+                        carregarAlertas();
+                    } else {
+                        alert(resultado.erro);
+                    }
+                } catch (error) {
+                    alert('Falha na exclusão.');
+                }
+            }
+        }
+
+        function resetarFormulario() {
+            document.getElementById('form-produto').reset();
+            document.getElementById('form-titulo').innerText = 'Novo Produto';
+            document.getElementById('input-ean').removeAttribute('readonly');
+            document.getElementById('btn-cancelar').style.display = 'none';
+            document.getElementById('btn-salvar').innerText = 'Salvar';
+        }
+
         carregarAlertas();
     </script>
 </body>

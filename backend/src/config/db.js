@@ -15,10 +15,18 @@ async function inicializarBanco() {
             fornecedor TEXT,
             estoque_atual INTEGER DEFAULT 0,
             estoque_alvo INTEGER NOT NULL
-        )
+        );
+
+        CREATE TABLE IF NOT EXISTS historico (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ean TEXT,
+            nome_produto TEXT,
+            acao TEXT,
+            data_hora DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     `);
 
-    console.log("✅ Banco de dados SQLite conectado e tabela criada!");
+    console.log("Banco de dados conectado.");
     return db;
 }
 

@@ -14,7 +14,7 @@ app.use(express.json());
 
 const upload = multer({ dest: 'uploads/' });
 
-// 1. Rota que puxa os alertas (matemática do estoque)
+// Buscar alertas de estoque
 app.get('/alertas', async (req, res) => {
     try {
         const produtosEmBaixa = await db.all('SELECT * FROM produtos WHERE estoque_atual < estoque_alvo');
@@ -30,25 +30,50 @@ app.get('/alertas', async (req, res) => {
 
         res.json(alertas);
     } catch (erro) {
-        console.error("Erro no banco:", erro);
-        res.status(500).json({ erro: "Erro ao buscar alertas no banco." });
+        console.error("Erro BD (alertas):", erro);
+        res.status(500).json({ erro: "Erro ao consultar alertas." });
     }
 });
 
-// 2. Rota que simula a chegada do produto e zera o alerta
+// Atualizar estoque e registrar histórico
 app.put('/repor/:ean', async (req, res) => {
     const eanProduto = req.params.ean;
+    const { quantidade, tipo } = req.body || {};
+
     try {
-        await db.run('UPDATE produtos SET estoque_atual = estoque_alvo WHERE ean = ?', [eanProduto]);
-        res.json({ mensagem: "Estoque atualizado com sucesso!" });
+        const produto = await db.get('SELECT nome, estoque_atual, estoque_alvo FROM produtos WHERE ean = ?', [eanProduto]);
+        if (!produto) return res.status(404).json({ erro: "Produto não encontrado." });
+
+        let acaoTexto = "";
+
+        if (!quantidade) {
+            let qtdCompletada = produto.estoque_alvo - produto.estoque_atual;
+            await db.run('UPDATE produtos SET estoque_atual = estoque_alvo WHERE ean = ?', [eanProduto]);
+            acaoTexto = `Reposição total (+${qtdCompletada})`;
+        } else if (tipo === 'adicionar') {
+            await db.run('UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE ean = ?', [quantidade, eanProduto]);
+            acaoTexto = `Adição parcial (+${quantidade})`;
+        } else if (tipo === 'montante') {
+            await db.run('UPDATE produtos SET estoque_atual = ? WHERE ean = ?', [quantidade, eanProduto]);
+            acaoTexto = `Ajuste manual (= ${quantidade})`;
+        }
+        
+        await db.run(
+            'INSERT INTO historico (ean, nome_produto, acao) VALUES (?, ?, ?)',
+            [eanProduto, produto.nome, acaoTexto]
+        );
+
+        res.json({ mensagem: "Estoque atualizado." });
     } catch (erro) {
-        res.status(500).json({ erro: "Erro ao atualizar o banco." });
+        console.error("Erro reposição:", erro);
+        res.status(500).json({ erro: "Erro ao atualizar estoque." });
     }
 });
-// 3. Rota nova para importar a planilha do Excel
+
+// Importar planilha
 app.post('/importar', upload.single('planilha'), async (req, res) => {
     if (!req.file) {
-        return res.status(400).json({ erro: "Nenhum arquivo enviado." });
+        return res.status(400).json({ erro: "Arquivo não enviado." });
     }
 
     try {
@@ -62,7 +87,6 @@ app.post('/importar', upload.single('planilha'), async (req, res) => {
             if (linha.Nome && linha.EAN) {
                 let eanFormatado = String(linha.EAN).replace(/\.0$/, '');
 
-                // INSERT com ON CONFLICT (Upsert)
                 await db.run(
                     `INSERT INTO produtos (nome, ean, fornecedor, estoque_atual, estoque_alvo) 
                      VALUES (?, ?, ?, ?, ?)
@@ -79,32 +103,89 @@ app.post('/importar', upload.single('planilha'), async (req, res) => {
                         linha.EstoqueAlvo || 10
                     ]
                 );
-                inseridos++; // Conta como processado (inserido ou atualizado)
+                inseridos++;
             }
         }
         
         fs.unlinkSync(req.file.path);
-        res.json({ mensagem: `Sucesso! ${inseridos} produtos foram importados/atualizados.` });
+        res.json({ mensagem: `${inseridos} registros processados.` });
     } catch (erro) {
-        console.error("Erro na importação:", erro);
-        res.status(500).json({ erro: "Falha ao processar o arquivo Excel." });
+        console.error("Erro importação:", erro);
+        res.status(500).json({ erro: "Falha ao ler planilha." });
     }
 });
-// 4. Rota que devolve todo o estoque cadastrado
+
+// Listar estoque completo
 app.get('/produtos', async (req, res) => {
     try {
         const todosProdutos = await db.all('SELECT * FROM produtos');
         res.json(todosProdutos);
     } catch (erro) {
-        console.error("Erro no banco:", erro);
-        res.status(500).json({ erro: "Erro ao buscar o estoque completo." });
+        console.error("Erro BD (produtos):", erro);
+        res.status(500).json({ erro: "Erro ao consultar produtos." });
     }
 });
 
-// Inicialização do Servidor e Banco
+// Cadastrar produto manual
+app.post('/produtos', async (req, res) => {
+    const { nome, ean, fornecedor, estoque_atual, estoque_alvo } = req.body;
+    try {
+        await db.run(
+            `INSERT INTO produtos (nome, ean, fornecedor, estoque_atual, estoque_alvo) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [nome, ean, fornecedor || "Desconhecido", estoque_atual || 0, estoque_alvo || 1]
+        );
+        res.status(201).json({ mensagem: "Produto cadastrado." });
+    } catch (erro) {
+        console.error("Erro cadastro:", erro);
+        res.status(500).json({ erro: "Erro ao cadastrar (EAN duplicado?)." });
+    }
+});
+
+// Editar produto
+app.put('/produtos/:ean', async (req, res) => {
+    const eanProduto = req.params.ean;
+    const { nome, fornecedor, estoque_atual, estoque_alvo } = req.body;
+    try {
+        await db.run(
+            `UPDATE produtos 
+             SET nome = ?, fornecedor = ?, estoque_atual = ?, estoque_alvo = ? 
+             WHERE ean = ?`,
+            [nome, fornecedor, estoque_atual, estoque_alvo, eanProduto]
+        );
+        res.json({ mensagem: "Produto atualizado." });
+    } catch (erro) {
+        console.error("Erro edição:", erro);
+        res.status(500).json({ erro: "Erro ao editar produto." });
+    }
+});
+
+// Excluir produto
+app.delete('/produtos/:ean', async (req, res) => {
+    const eanProduto = req.params.ean;
+    try {
+        await db.run('DELETE FROM produtos WHERE ean = ?', [eanProduto]);
+        res.json({ mensagem: "Produto excluído." });
+    } catch (erro) {
+        console.error("Erro exclusão:", erro);
+        res.status(500).json({ erro: "Erro ao excluir produto." });
+    }
+});
+
+// Histórico de movimentações
+app.get('/historico', async (req, res) => {
+    try {
+        const historico = await db.all('SELECT * FROM historico ORDER BY data_hora DESC LIMIT 50');
+        res.json(historico);
+    } catch (erro) {
+        console.error("Erro BD (historico):", erro);
+        res.status(500).json({ erro: "Erro ao buscar histórico." });
+    }
+});
+
 inicializarBanco().then(banco => {
     db = banco;
     app.listen(porta, () => {
-        console.log(`🚀 Servidor e Banco de Dados rodando na porta ${porta}`);
+        console.log(`Servidor rodando na porta ${porta}`);
     });
-}).catch(erro => console.error("Erro ao iniciar o banco:", erro));
+}).catch(erro => console.error("Erro inicialização:", erro));
