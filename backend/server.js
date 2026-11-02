@@ -6,7 +6,7 @@ const xlsx = require('xlsx');
 const fs = require('fs');
 
 const app = express();
-const porta = 3000;
+const port = 3000;
 let db;
 
 app.use(cors());
@@ -14,178 +14,170 @@ app.use(express.json());
 
 const upload = multer({ dest: 'uploads/' });
 
-// Buscar alertas de estoque
-app.get('/alertas', async (req, res) => {
-    try {
-        const produtosEmBaixa = await db.all('SELECT * FROM produtos WHERE estoque_atual < estoque_alvo');
-        
-        let alertas = produtosEmBaixa.map(produto => {
-            return {
-                ean: produto.ean,
-                nome: produto.nome,
-                fornecedor: produto.fornecedor,
-                quantidadePedir: produto.estoque_alvo - produto.estoque_atual
-            };
-        });
+// Middleware de Acesso
+const checkAdmin = (req, res, next) => {
+    if (req.headers['x-perfil'] !== 'admin') {
+        return res.status(403).json({ erro: "Acesso restrito." });
+    }
+    next();
+};
 
-        res.json(alertas);
-    } catch (erro) {
-        console.error("Erro BD (alertas):", erro);
-        res.status(500).json({ erro: "Erro ao consultar alertas." });
+// Autenticação
+app.post('/login', (req, res) => {
+    const { username, senha } = req.body;
+    db.get('SELECT username, perfil FROM usuarios WHERE username = ? AND senha = ?', [username, senha])
+        .then(user => {
+            if (user) res.json(user);
+            else res.status(401).json({ erro: "Credenciais inválidas." });
+        })
+        .catch(err => res.status(500).json({ erro: "Erro interno." }));
+});
+
+// Gestão de Usuários
+app.get('/usuarios', checkAdmin, (req, res) => {
+    db.all('SELECT id, username, perfil FROM usuarios')
+        .then(users => res.json(users))
+        .catch(err => res.status(500).json({ erro: "Erro ao buscar usuários." }));
+});
+
+app.post('/usuarios', checkAdmin, (req, res) => {
+    const { username, senha, perfil } = req.body;
+    if (!['admin', 'estoquista'].includes(perfil)) {
+        return res.status(400).json({ erro: "Perfil inválido." });
+    }
+
+    db.run('INSERT INTO usuarios (username, senha, perfil) VALUES (?, ?, ?)', [username, senha, perfil])
+        .then(() => res.status(201).json({ msg: "Criado com sucesso." }))
+        .catch(err => res.status(500).json({ erro: "Erro ou usuário duplicado." }));
+});
+
+app.delete('/usuarios/:id', checkAdmin, async (req, res) => {
+    const id = req.params.id;
+    try {
+        const user = await db.get('SELECT username FROM usuarios WHERE id = ?', [id]);
+        if (user?.username === 'admin') return res.status(403).json({ erro: "Admin principal protegido." });
+        
+        await db.run('DELETE FROM usuarios WHERE id = ?', [id]);
+        res.json({ msg: "Usuário removido." });
+    } catch (err) {
+        res.status(500).json({ erro: "Falha na exclusão." });
     }
 });
 
-// Atualizar estoque e registrar histórico
+// Estoque e Alertas
+app.get('/alertas', (req, res) => {
+    db.all('SELECT ean, nome, fornecedor, estoque_alvo, estoque_atual FROM produtos WHERE estoque_atual < estoque_alvo')
+        .then(baixa => {
+            const list = baixa.map(p => ({
+                ...p,
+                quantidadePedir: p.estoque_alvo - p.estoque_atual
+            }));
+            res.json(list);
+        })
+        .catch(err => res.status(500).json({ erro: "Falha ao ler alertas." }));
+});
+
 app.put('/repor/:ean', async (req, res) => {
-    const eanProduto = req.params.ean;
+    const ean = req.params.ean;
     const { quantidade, tipo } = req.body || {};
+    const user = req.headers['x-usuario'] || 'Sys';
 
     try {
-        const produto = await db.get('SELECT nome, estoque_atual, estoque_alvo FROM produtos WHERE ean = ?', [eanProduto]);
-        if (!produto) return res.status(404).json({ erro: "Produto não encontrado." });
+        const prod = await db.get('SELECT nome, estoque_atual, estoque_alvo FROM produtos WHERE ean = ?', [ean]);
+        if (!prod) return res.status(404).json({ erro: "Não encontrado." });
 
-        let acaoTexto = "";
+        let acao = "";
 
         if (!quantidade) {
-            let qtdCompletada = produto.estoque_alvo - produto.estoque_atual;
-            await db.run('UPDATE produtos SET estoque_atual = estoque_alvo WHERE ean = ?', [eanProduto]);
-            acaoTexto = `Reposição total (+${qtdCompletada})`;
+            await db.run('UPDATE produtos SET estoque_atual = estoque_alvo WHERE ean = ?', [ean]);
+            acao = `Reposição total (+${prod.estoque_alvo - prod.estoque_atual})`;
         } else if (tipo === 'adicionar') {
-            await db.run('UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE ean = ?', [quantidade, eanProduto]);
-            acaoTexto = `Adição parcial (+${quantidade})`;
+            await db.run('UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE ean = ?', [quantidade, ean]);
+            acao = `Adição parcial (+${quantidade})`;
         } else if (tipo === 'montante') {
-            await db.run('UPDATE produtos SET estoque_atual = ? WHERE ean = ?', [quantidade, eanProduto]);
-            acaoTexto = `Ajuste manual (= ${quantidade})`;
+            await db.run('UPDATE produtos SET estoque_atual = ? WHERE ean = ?', [quantidade, ean]);
+            acao = `Ajuste manual (= ${quantidade})`;
         }
         
-        await db.run(
-            'INSERT INTO historico (ean, nome_produto, acao) VALUES (?, ?, ?)',
-            [eanProduto, produto.nome, acaoTexto]
-        );
+        await db.run('INSERT INTO historico (ean, nome_produto, acao, usuario) VALUES (?, ?, ?, ?)', 
+            [ean, prod.nome, acao, user]);
 
-        res.json({ mensagem: "Estoque atualizado." });
-    } catch (erro) {
-        console.error("Erro reposição:", erro);
-        res.status(500).json({ erro: "Erro ao atualizar estoque." });
+        res.json({ msg: "Atualizado." });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao atualizar." });
     }
 });
 
-// Importar planilha
-app.post('/importar', upload.single('planilha'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ erro: "Arquivo não enviado." });
-    }
+// Importação Excel
+app.post('/importar', checkAdmin, upload.single('planilha'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ erro: "Sem arquivo." });
 
     try {
-        const workbook = xlsx.readFile(req.file.path);
-        const nomeAba = workbook.SheetNames[0];
-        const dadosPlanilha = xlsx.utils.sheet_to_json(workbook.Sheets[nomeAba]);
+        const wb = xlsx.readFile(req.file.path);
+        const ws = xlsx.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        let count = 0;
 
-        let inseridos = 0;
-
-        for (let linha of dadosPlanilha) {
-            if (linha.Nome && linha.EAN) {
-                let eanFormatado = String(linha.EAN).replace(/\.0$/, '');
-
-                await db.run(
-                    `INSERT INTO produtos (nome, ean, fornecedor, estoque_atual, estoque_alvo) 
-                     VALUES (?, ?, ?, ?, ?)
-                     ON CONFLICT(ean) DO UPDATE SET 
+        for (let row of ws) {
+            if (row.Nome && row.EAN) {
+                const eanLimpo = String(row.EAN).replace(/\.0$/, '');
+                await db.run(`
+                    INSERT INTO produtos (nome, ean, fornecedor, estoque_atual, estoque_alvo) 
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(ean) DO UPDATE SET 
                         estoque_atual = excluded.estoque_atual,
                         estoque_alvo = excluded.estoque_alvo,
                         nome = excluded.nome,
                         fornecedor = excluded.fornecedor`,
-                    [
-                        linha.Nome, 
-                        eanFormatado, 
-                        linha.Fornecedor || "Desconhecido", 
-                        linha.EstoqueAtual || 0, 
-                        linha.EstoqueAlvo || 10
-                    ]
+                    [row.Nome, eanLimpo, row.Fornecedor || "Desc", row.EstoqueAtual || 0, row.EstoqueAlvo || 10]
                 );
-                inseridos++;
+                count++;
             }
         }
-        
         fs.unlinkSync(req.file.path);
-        res.json({ mensagem: `${inseridos} registros processados.` });
-    } catch (erro) {
-        console.error("Erro importação:", erro);
-        res.status(500).json({ erro: "Falha ao ler planilha." });
+        res.json({ msg: `${count} importados.` });
+    } catch (err) {
+        res.status(500).json({ erro: "Falha na leitura." });
     }
 });
 
-// Listar estoque completo
-app.get('/produtos', async (req, res) => {
-    try {
-        const todosProdutos = await db.all('SELECT * FROM produtos');
-        res.json(todosProdutos);
-    } catch (erro) {
-        console.error("Erro BD (produtos):", erro);
-        res.status(500).json({ erro: "Erro ao consultar produtos." });
-    }
+// CRUD de Produtos
+app.get('/produtos', (req, res) => {
+    db.all('SELECT * FROM produtos')
+        .then(itens => res.json(itens))
+        .catch(err => res.status(500).json({ erro: "Erro de consulta." }));
 });
 
-// Cadastrar produto manual
-app.post('/produtos', async (req, res) => {
+app.post('/produtos', checkAdmin, (req, res) => {
     const { nome, ean, fornecedor, estoque_atual, estoque_alvo } = req.body;
-    try {
-        await db.run(
-            `INSERT INTO produtos (nome, ean, fornecedor, estoque_atual, estoque_alvo) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [nome, ean, fornecedor || "Desconhecido", estoque_atual || 0, estoque_alvo || 1]
-        );
-        res.status(201).json({ mensagem: "Produto cadastrado." });
-    } catch (erro) {
-        console.error("Erro cadastro:", erro);
-        res.status(500).json({ erro: "Erro ao cadastrar (EAN duplicado?)." });
-    }
+    db.run('INSERT INTO produtos (nome, ean, fornecedor, estoque_atual, estoque_alvo) VALUES (?, ?, ?, ?, ?)', 
+        [nome, ean, fornecedor || "Desc", estoque_atual || 0, estoque_alvo || 1])
+        .then(() => res.status(201).json({ msg: "Cadastrado." }))
+        .catch(err => res.status(500).json({ erro: "Falha ao salvar." }));
 });
 
-// Editar produto
-app.put('/produtos/:ean', async (req, res) => {
-    const eanProduto = req.params.ean;
+app.put('/produtos/:ean', checkAdmin, (req, res) => {
     const { nome, fornecedor, estoque_atual, estoque_alvo } = req.body;
-    try {
-        await db.run(
-            `UPDATE produtos 
-             SET nome = ?, fornecedor = ?, estoque_atual = ?, estoque_alvo = ? 
-             WHERE ean = ?`,
-            [nome, fornecedor, estoque_atual, estoque_alvo, eanProduto]
-        );
-        res.json({ mensagem: "Produto atualizado." });
-    } catch (erro) {
-        console.error("Erro edição:", erro);
-        res.status(500).json({ erro: "Erro ao editar produto." });
-    }
+    db.run('UPDATE produtos SET nome = ?, fornecedor = ?, estoque_atual = ?, estoque_alvo = ? WHERE ean = ?', 
+        [nome, fornecedor, estoque_atual, estoque_alvo, req.params.ean])
+        .then(() => res.json({ msg: "Atualizado." }))
+        .catch(err => res.status(500).json({ erro: "Erro de update." }));
 });
 
-// Excluir produto
-app.delete('/produtos/:ean', async (req, res) => {
-    const eanProduto = req.params.ean;
-    try {
-        await db.run('DELETE FROM produtos WHERE ean = ?', [eanProduto]);
-        res.json({ mensagem: "Produto excluído." });
-    } catch (erro) {
-        console.error("Erro exclusão:", erro);
-        res.status(500).json({ erro: "Erro ao excluir produto." });
-    }
+app.delete('/produtos/:ean', checkAdmin, (req, res) => {
+    db.run('DELETE FROM produtos WHERE ean = ?', [req.params.ean])
+        .then(() => res.json({ msg: "Apagado." }))
+        .catch(err => res.status(500).json({ erro: "Falha ao excluir." }));
 });
 
-// Histórico de movimentações
-app.get('/historico', async (req, res) => {
-    try {
-        const historico = await db.all('SELECT * FROM historico ORDER BY data_hora DESC LIMIT 50');
-        res.json(historico);
-    } catch (erro) {
-        console.error("Erro BD (historico):", erro);
-        res.status(500).json({ erro: "Erro ao buscar histórico." });
-    }
+// Histórico
+app.get('/historico', (req, res) => {
+    db.all('SELECT * FROM historico ORDER BY data_hora DESC LIMIT 50')
+        .then(logs => res.json(logs))
+        .catch(err => res.status(500).json({ erro: "Erro no log." }));
 });
 
-inicializarBanco().then(banco => {
-    db = banco;
-    app.listen(porta, () => {
-        console.log(`Servidor rodando na porta ${porta}`);
-    });
-}).catch(erro => console.error("Erro inicialização:", erro));
+// Boot
+inicializarBanco().then(b => {
+    db = b;
+    app.listen(port, () => console.log(`Rodando na porta ${port}`));
+}).catch(err => console.error("Falha no boot:", err));

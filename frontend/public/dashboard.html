@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Gestão de Estoque</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        body { background-color: #121212; }
+        .table-responsive { border-radius: 8px; overflow: hidden; border: 1px solid #333; }
+        .btn-toggle { font-weight: 500; letter-spacing: 0.5px; }
+        #tela-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card { width: 100%; max-width: 400px; padding: 30px; background-color: #1e1e1e; border: 1px solid #333; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+    <div id="tela-login">
+        <div class="login-card shadow-lg">
+            <h3 class="text-success fw-bold text-center mb-4">Padaria ERP</h3>
+            <form id="form-login">
+                <div class="mb-3">
+                    <label class="form-label text-muted">Usuário</label>
+                    <input type="text" id="login-user" class="form-control bg-dark text-white border-secondary" required>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label text-muted">Senha</label>
+                    <input type="password" id="login-senha" class="form-control bg-dark text-white border-secondary" required>
+                </div>
+                <button type="submit" class="btn btn-success w-100 fw-bold">Entrar no Sistema</button>
+            </form>
+            <div id="login-erro" class="text-danger mt-3 text-center small" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div id="tela-dashboard" class="container py-4" style="display: none;">
+        
+        <header class="pb-3 mb-4 border-bottom d-flex flex-wrap justify-content-between align-items-end gap-3">
+            <div>
+                <h1 class="text-success fw-bold m-0">Painel de Estoque</h1>
+                <p class="text-muted m-0 mt-1">
+                    Operador: <strong id="header-nome-usuario" class="text-white"></strong> 
+                    (<span id="header-perfil-usuario" class="text-info"></span>)
+                </p>
+            </div>
+            <div class="d-flex gap-2">
+                <select id="filtro-fornecedor-alertas" class="form-select bg-dark text-white border-secondary" onchange="aplicarFiltroAlertas()">
+                    <option value="">Filtro: Todos os Fornecedores</option>
+                </select>
+                <button class="btn btn-outline-danger" onclick="sair()">Sair</button>
+            </div>
+        </header>
+
+        <main>
+            <button id="btn-toggle-alertas" class="btn btn-outline-warning w-100 text-start mb-3 btn-toggle" onclick="alternarSecao('sec-alertas')">
+                Painel de Alertas (Itens Abaixo da Meta)
+            </button>
+            <section id="sec-alertas" style="display: block;" class="mb-4">
+                <div id="lista-alertas" class="row" aria-live="polite">
+                    <div class="col-12"><p>Carregando dados...</p></div>
+                </div>
+            </section>
+            
+            <hr class="my-5 border-secondary">
+
+            <button id="btn-toggle-graficos" class="btn btn-outline-primary w-100 text-start mb-3 btn-toggle" onclick="alternarGraficos()">
+                Resumo Analítico (Gráficos)
+            </button>
+            <section id="sec-graficos" style="display: none;" class="mb-4">
+                <div class="card bg-dark border-secondary">
+                    <div class="card-body">
+                        <h5 class="card-title text-center text-primary mb-4">Saúde Geral do Estoque</h5>
+                        <div style="max-width: 300px; margin: 0 auto;">
+                            <canvas id="graficoEstoque"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <button id="btn-toggle-usuarios" class="btn btn-outline-info w-100 text-start mb-3 btn-toggle" onclick="alternarUsuarios()">
+                Gestão de Equipe (Usuários)
+            </button>
+            <section id="sec-usuarios" style="display: none;" class="mb-4">
+                <div class="card bg-dark border-secondary mb-3">
+                    <div class="card-body">
+                        <form id="form-usuario" class="row g-2 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label text-muted small mb-1">Novo Usuário</label>
+                                <input type="text" id="new-user" class="form-control" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label text-muted small mb-1">Senha</label>
+                                <input type="password" id="new-pass" class="form-control" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label text-muted small mb-1">Perfil</label>
+                                <select id="new-perfil" class="form-select">
+                                    <option value="estoquista">Estoquista (Apenas Reposição)</option>
+                                    <option value="admin">Administrador (Acesso Total)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-info w-100 fw-bold">Cadastrar Usuário</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead class="table-secondary">
+                            <tr>
+                                <th>ID</th>
+                                <th>Usuário</th>
+                                <th>Perfil</th>
+                                <th class="text-end">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lista-usuarios"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <button id="btn-toggle-importacao" class="btn btn-outline-secondary w-100 text-start mb-3 btn-toggle" onclick="alternarSecao('sec-import')">
+                Importar Planilha Excel
+            </button>
+            <section id="sec-import" class="card bg-dark border-secondary mb-4" style="display: none;">
+                <div class="card-body">
+                    <h5 class="card-title">Importação em Lote</h5>
+                    <div class="input-group">
+                        <input type="file" class="form-control" id="arquivoExcel" accept=".xlsx, .xls">
+                        <button class="btn btn-primary" onclick="enviarPlanilha()">Processar Arquivo</button>
+                    </div>
+                </div>
+            </section>
+
+            <button class="btn btn-outline-secondary w-100 text-start mb-3 btn-toggle" onclick="alternarEstoque()">
+                Gerenciar Estoque Completo
+            </button>
+            <section id="sec-estoque" style="display: none;" class="mb-4">
+                
+                <div id="area-cadastro" class="card bg-dark border-secondary mb-4">
+                    <div class="card-body">
+                        <h5 id="form-titulo" class="card-title text-success mb-3">Novo Produto</h5>
+                        <form id="form-produto" class="row g-2 align-items-center">
+                            <div class="col-md-3">
+                                <input type="text" id="prod-nome" class="form-control" placeholder="Nome do Produto" required>
+                            </div>
+                            <div class="col-md-2">
+                                <input type="text" id="prod-ean" class="form-control" placeholder="Código EAN" required>
+                            </div>
+                            <div class="col-md-3">
+                                <input type="text" id="prod-fornecedor" class="form-control" placeholder="Fornecedor" required>
+                            </div>
+                            <div class="col-md-2">
+                                <input type="number" id="prod-atual" class="form-control" placeholder="Qtd Atual" required>
+                            </div>
+                            <div class="col-md-2">
+                                <input type="number" id="prod-alvo" class="form-control" placeholder="Meta/Alvo" required>
+                            </div>
+                            <div class="col-12 mt-3">
+                                <button type="submit" id="btn-salvar" class="btn btn-success">Salvar Cadastro</button>
+                                <button type="button" id="btn-cancelar" class="btn btn-danger" style="display:none;" onclick="limparFormulario()">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h4 class="m-0">Lista de Produtos</h4>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-danger fw-bold" onclick="gerarPDF()">📄 Baixar PDF</button>
+                        <select id="filtro-fornecedor" class="form-select w-auto bg-dark text-white border-secondary" onchange="aplicarFiltroTabela()">
+                            <option value="">Todos os Fornecedores</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover table-striped mb-0">
+                        <thead class="table-secondary">
+                            <tr>
+                                <th>Produto</th>
+                                <th>EAN</th>
+                                <th>Fornecedor</th>
+                                <th>Estoque</th>
+                                <th>Alvo</th>
+                                <th id="col-acoes" class="text-end">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lista-produtos"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <button class="btn btn-outline-secondary w-100 text-start mb-3 btn-toggle" onclick="alternarHistorico()">
+                Histórico de Movimentações
+            </button>
+            <section id="sec-historico" style="display: none;">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead class="table-secondary">
+                            <tr>
+                                <th>Data e Hora</th>
+                                <th>Usuário</th>
+                                <th>Produto</th>
+                                <th>Ação Realizada</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lista-historico"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        let sessao = { user: null, perfil: null };
+        let estoqueCache = [];
+        let alertasCache = [];
+        let graficoChartJS = null;
+
+        function montarCabecalho() {
+            return {
+                'Content-Type': 'application/json',
+                'x-usuario': sessao.user,
+                'x-perfil': sessao.perfil
+            };
+        }
+
+        document.getElementById('form-login').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const usuario = document.getElementById('login-user').value;
+            const senha = document.getElementById('login-senha').value;
+            const erroTela = document.getElementById('login-erro');
+
+            fetch('http://localhost:3000/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: usuario, senha: senha })
+            })
+            .then(res => res.json().then(dados => ({ status: res.status, ok: res.ok, corpo: dados })))
+            .then(resposta => {
+                if (resposta.ok) {
+                    sessao = { user: resposta.corpo.username, perfil: resposta.corpo.perfil };
+                    montarDashboard();
+                } else {
+                    erroTela.innerText = resposta.corpo.erro;
+                    erroTela.style.display = 'block';
+                }
+            })
+            .catch(() => {
+                erroTela.innerText = 'Servidor offline ou inacessível.';
+                erroTela.style.display = 'block';
+            });
+        });
+
+        function montarDashboard() {
+            document.getElementById('tela-login').style.display = 'none';
+            document.getElementById('tela-dashboard').style.display = 'block';
+            
+            document.getElementById('header-nome-usuario').innerText = sessao.user;
+            document.getElementById('header-perfil-usuario').innerText = sessao.perfil;
+
+            const adminLogado = sessao.perfil === 'admin';
+            
+            document.getElementById('btn-toggle-usuarios').style.display = adminLogado ? 'block' : 'none';
+            document.getElementById('btn-toggle-importacao').style.display = adminLogado ? 'block' : 'none';
+            document.getElementById('area-cadastro').style.display = adminLogado ? 'block' : 'none';
+            document.getElementById('col-acoes').style.display = adminLogado ? 'table-cell' : 'none';
+
+            carregarAlertas();
+
+            fetch('http://localhost:3000/produtos')
+                .then(r => r.json())
+                .then(itens => { estoqueCache = itens; });
+        }
+
+        function sair() {
+            sessao = { user: null, perfil: null };
+            document.getElementById('form-login').reset();
+            document.getElementById('login-erro').style.display = 'none';
+            document.getElementById('tela-dashboard').style.display = 'none';
+            document.getElementById('tela-login').style.display = 'flex';
+        }
+
+        function alternarSecao(idDiv) {
+            const painel = document.getElementById(idDiv);
+            painel.style.display = painel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function alternarEstoque() { 
+            alternarSecao('sec-estoque'); 
+            if (document.getElementById('sec-estoque').style.display === 'block') carregarEstoque(); 
+        }
+
+        function alternarHistorico() { 
+            alternarSecao('sec-historico'); 
+            if (document.getElementById('sec-historico').style.display === 'block') carregarHistorico(); 
+        }
+
+        function alternarUsuarios() {
+            alternarSecao('sec-usuarios');
+            if (document.getElementById('sec-usuarios').style.display === 'block') listarUsuarios();
+        }
+
+        function alternarGraficos() {
+            alternarSecao('sec-graficos');
+            if (document.getElementById('sec-graficos').style.display === 'block') {
+                fetch('http://localhost:3000/produtos').then(r => r.json()).then(itens => {
+                    estoqueCache = itens;
+                    desenharGrafico();
+                });
+            }
+        }
+
+        function listarUsuarios() {
+            fetch('http://localhost:3000/usuarios', { headers: montarCabecalho() })
+                .then(r => r.json())
+                .then(users => {
+                    const tabela = document.getElementById('lista-usuarios');
+                    tabela.innerHTML = '';
+                    
+                    users.forEach(u => {
+                        const tagPerfil = u.perfil === 'admin' 
+                            ? '<span class="badge bg-danger">Admin</span>' 
+                            : '<span class="badge bg-secondary">Estoquista</span>';
+                        
+                        tabela.innerHTML += `
+                            <tr>
+                                <td class="text-muted">#${u.id}</td>
+                                <td class="fw-bold">${u.username}</td>
+                                <td>${tagPerfil}</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="apagarUsuario(${u.id})">Remover Acesso</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                });
+        }
+
+        document.getElementById('form-usuario').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const novoUsuario = {
+                username: document.getElementById('new-user').value,
+                senha: document.getElementById('new-pass').value,
+                perfil: document.getElementById('new-perfil').value
+            };
+            
+            fetch('http://localhost:3000/usuarios', { 
+                method: 'POST', 
+                headers: montarCabecalho(), 
+                body: JSON.stringify(novoUsuario) 
+            })
+            .then(r => r.json())
+            .then(res => {
+                if(res.erro) {
+                    alert(res.erro);
+                } else { 
+                    document.getElementById('form-usuario').reset(); 
+                    listarUsuarios(); 
+                }
+            });
+        });
+
+        function apagarUsuario(id) {
+            if(confirm('Excluir este usuário permanentemente?')) {
+                fetch(`http://localhost:3000/usuarios/${id}`, { method: 'DELETE', headers: montarCabecalho() })
+                .then(r => r.json())
+                .then(res => { 
+                    if(res.erro) alert(res.erro);
+                    listarUsuarios(); 
+                });
+            }
+        }
+
+        function desenharGrafico() {
+            const areaCanvas = document.getElementById('graficoEstoque').getContext('2d');
+            let qtdOk = 0;
+            let qtdRuim = 0;
+            
+            estoqueCache.forEach(prod => {
+                if (prod.estoque_atual >= prod.estoque_alvo) qtdOk++; 
+                else qtdRuim++;
+            });
+
+            if (graficoChartJS) {
+                graficoChartJS.destroy();
+            }
+
+            graficoChartJS = new Chart(areaCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Estoque Saudável', 'Abaixo da Meta'],
+                    datasets: [{
+                        data: [qtdOk, qtdRuim],
+                        backgroundColor: ['#198754', '#dc3545'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#ffffff' } } } }
+            });
+        }
+
+        function gerarPDF() {
+            const paramFiltro = document.getElementById('filtro-fornecedor').value;
+            let exportData = estoqueCache;
+
+            if (paramFiltro !== "") {
+                exportData = estoqueCache.filter(prod => prod.fornecedor === paramFiltro);
+            }
+
+            if (exportData.length === 0) return alert("Não há dados para exportar com o filtro atual.");
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setFontSize(14);
+            doc.text("Relatório de Inventário - Padaria ERP", 14, 15);
+            doc.setFontSize(10);
+            doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 22);
+            if (paramFiltro !== "") doc.text(`Filtro aplicado: Fornecedor = ${paramFiltro}`, 14, 27);
+
+            const cabecalho = [["Produto", "EAN", "Fornecedor", "Estoque Atual", "Meta", "Status"]];
+            const mapeamento = exportData.map(prod => [
+                prod.nome, prod.ean, prod.fornecedor, prod.estoque_atual.toString(), prod.estoque_alvo.toString(),
+                prod.estoque_atual < prod.estoque_alvo ? 'REPOR' : 'OK'
+            ]);
+
+            doc.autoTable({ head: cabecalho, body: mapeamento, startY: paramFiltro !== "" ? 32 : 28, theme: 'striped', headStyles: { fillColor: [40, 40, 40] }, styles: { fontSize: 9 } });
+            doc.save("relatorio_estoque.pdf");
+        }
+
+        function carregarAlertas() {
+            fetch('http://localhost:3000/alertas')
+                .then(r => r.json())
+                .then(dados => {
+                    alertasCache = dados;
+                    atualizarSelectFiltroAlertas();
+                    montarCardsAlertas(alertasCache);
+                });
+        }
+
+        function atualizarSelectFiltroAlertas() {
+            const dropdown = document.getElementById('filtro-fornecedor-alertas');
+            const atual = dropdown.value;
+            const listaFornecedores = [...new Set(alertasCache.map(a => a.fornecedor))].sort();
+            
+            dropdown.innerHTML = '<option value="">Filtro: Todos os Fornecedores</option>';
+            listaFornecedores.forEach(forn => { 
+                if(forn) dropdown.innerHTML += `<option value="${forn}">${forn}</option>`; 
+            });
+            dropdown.value = atual;
+        }
+
+        function aplicarFiltroAlertas() {
+            const param = document.getElementById('filtro-fornecedor-alertas').value;
+            if (param === "") {
+                montarCardsAlertas(alertasCache);
+            } else {
+                montarCardsAlertas(alertasCache.filter(alerta => alerta.fornecedor === param));
+            }
+        }
+
+        function montarCardsAlertas(listaFiltrada) {
+            const divCentral = document.getElementById('lista-alertas');
+            divCentral.innerHTML = '';
+
+            if (listaFiltrada.length === 0) {
+                divCentral.innerHTML = '<div class="alert alert-success w-100">Nenhum alerta para o filtro atual.</div>';
+                return;
+            }
+
+            listaFiltrada.forEach(item => {
+                const cardAlerta = document.createElement('div');
+                cardAlerta.className = 'col-md-6 mb-3';
+                cardAlerta.innerHTML = `
+                    <div class="card h-100 border-danger">
+                        <div class="card-body">
+                            <h5 class="card-title text-danger">Abaixo da Meta</h5>
+                            <p class="card-text mb-1">Pedir <strong>${item.quantidadePedir}x</strong> de "${item.nome}"</p>
+                            <p class="text-muted small mb-3">Fornecedor: ${item.fornecedor} | EAN: ${item.ean}</p>
+                            <div class="input-group input-group-sm">
+                                <input type="number" id="qtd-${item.ean}" class="form-control" placeholder="Qtd (Vazio=Alvo)">
+                                <select id="tipo-${item.ean}" class="form-select" style="max-width: 130px;">
+                                    <option value="adicionar">Somar (+)</option>
+                                    <option value="montante">Total (=)</option>
+                                </select>
+                                <button onclick="processarReposicao('${item.ean}')" class="btn btn-success">Confirmar</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                divCentral.appendChild(cardAlerta);
+            });
+        }
+
+        function processarReposicao(eanId) {
+            const inputQtd = document.getElementById(`qtd-${eanId}`).value;
+            const modoSoma = document.getElementById(`tipo-${eanId}`).value;
+            const payload = {};
+            
+            if (inputQtd !== "") { 
+                payload.quantidade = parseInt(inputQtd); 
+                payload.tipo = modoSoma; 
+            }
+
+            fetch(`http://localhost:3000/repor/${eanId}`, { 
+                method: 'PUT', 
+                headers: montarCabecalho(), 
+                body: JSON.stringify(payload) 
+            })
+            .then(() => {
+                carregarAlertas();
+                if(document.getElementById('sec-estoque').style.display === 'block') carregarEstoque(); 
+                if(document.getElementById('sec-historico').style.display === 'block') carregarHistorico(); 
+                if(document.getElementById('sec-graficos').style.display === 'block') {
+                    fetch('http://localhost:3000/produtos').then(r => r.json()).then(itens => {
+                        estoqueCache = itens; 
+                        desenharGrafico();
+                    });
+                }
+            });
+        }
+
+        function carregarEstoque() {
+            fetch('http://localhost:3000/produtos')
+                .then(r => r.json())
+                .then(dados => {
+                    estoqueCache = dados; 
+                    popularFiltroTabela();
+                    desenharTabela(estoqueCache); 
+                });
+        }
+
+        function popularFiltroTabela() {
+            const dropdown = document.getElementById('filtro-fornecedor');
+            const selecionado = dropdown.value;
+            const listaUnica = [...new Set(estoqueCache.map(p => p.fornecedor))].sort();
+            
+            dropdown.innerHTML = '<option value="">Todos os Fornecedores</option>';
+            listaUnica.forEach(f => { 
+                if(f) dropdown.innerHTML += `<option value="${f}">${f}</option>`; 
+            });
+            dropdown.value = selecionado;
+        }
+
+        function aplicarFiltroTabela() {
+            const valorFiltro = document.getElementById('filtro-fornecedor').value;
+            if (valorFiltro === "") {
+                desenharTabela(estoqueCache);
+            } else {
+                desenharTabela(estoqueCache.filter(item => item.fornecedor === valorFiltro));
+            }
+        }
+
+        function desenharTabela(dadosBrutos) {
+            const corpoTabela = document.getElementById('lista-produtos');
+            corpoTabela.innerHTML = '';
+            
+            if (dadosBrutos.length === 0) {
+                corpoTabela.innerHTML = '<tr><td colspan="6" class="text-center">Vazio</td></tr>';
+                return;
+            }
+
+            const adminLogado = sessao.perfil === 'admin';
+
+            dadosBrutos.forEach(prod => {
+                let cssFalta = prod.estoque_atual < prod.estoque_alvo ? 'text-danger fw-bold' : '';
+                let cellAcoes = '';
+                
+                if (adminLogado) {
+                    cellAcoes = `
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-warning" onclick="preencherForm('${prod.ean}', '${prod.nome}', '${prod.fornecedor}', ${prod.estoque_atual}, ${prod.estoque_alvo})">Editar</button>
+                            <button class="btn btn-sm btn-danger" onclick="removerItem('${prod.ean}')">Excluir</button>
+                        </td>
+                    `;
+                }
+
+                corpoTabela.innerHTML += `
+                    <tr>
+                        <td class="fw-bold">${prod.nome}</td>
+                        <td><small class="text-muted">${prod.ean}</small></td>
+                        <td>${prod.fornecedor}</td>
+                        <td class="${cssFalta}">${prod.estoque_atual}</td>
+                        <td>${prod.estoque_alvo}</td>
+                        ${cellAcoes}
+                    </tr>
+                `;
+            });
+        }
+
+        function enviarPlanilha() {
+            const inputArea = document.getElementById('arquivoExcel');
+            if (!inputArea.files[0]) return alert("Selecione um arquivo primeiro.");
+            
+            const enveloparDados = new FormData();
+            enveloparDados.append('planilha', inputArea.files[0]);
+
+            fetch('http://localhost:3000/importar', { 
+                method: 'POST', 
+                headers: { 'x-usuario': sessao.user, 'x-perfil': sessao.perfil }, 
+                body: enveloparDados 
+            })
+            .then(r => r.json())
+            .then(res => { 
+                alert(res.mensagem || res.erro); 
+                inputArea.value = ""; 
+                carregarAlertas(); 
+                if(document.getElementById('sec-estoque').style.display === 'block') carregarEstoque();
+            });
+        }
+
+        function carregarHistorico() {
+            fetch('http://localhost:3000/historico')
+                .then(r => r.json())
+                .then(hist => {
+                    const localHistorico = document.getElementById('lista-historico');
+                    localHistorico.innerHTML = '';
+                    
+                    hist.forEach(linha => {
+                        const dataFormato = new Date(linha.data_hora + 'Z').toLocaleString('pt-BR');
+                        localHistorico.innerHTML += `
+                            <tr>
+                                <td class="text-muted">${dataFormato}</td>
+                                <td><span class="badge bg-secondary">${linha.usuario || 'Sistema'}</span></td>
+                                <td class="fw-bold">${linha.nome_produto}</td>
+                                <td><span class="badge bg-primary">${linha.acao}</span></td>
+                            </tr>
+                        `;
+                    });
+                });
+        }
+
+        document.getElementById('form-produto').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formObj = {
+                nome: document.getElementById('prod-nome').value,
+                ean: document.getElementById('prod-ean').value,
+                fornecedor: document.getElementById('prod-fornecedor').value,
+                estoque_atual: document.getElementById('prod-atual').value,
+                estoque_alvo: document.getElementById('prod-alvo').value
+            };
+            
+            const verificacaoEdicao = document.getElementById('prod-ean').hasAttribute('readonly');
+            
+            fetch(`http://localhost:3000/produtos${verificacaoEdicao ? '/'+formObj.ean : ''}`, {
+                method: verificacaoEdicao ? 'PUT' : 'POST',
+                headers: montarCabecalho(),
+                body: JSON.stringify(formObj)
+            }).then(r => { 
+                if(r.ok) { 
+                    limparFormulario(); 
+                    carregarEstoque(); 
+                    carregarAlertas(); 
+                } 
+            });
+        });
+
+        function preencherForm(codigoEan, descrNome, nmForn, qtAtual, qtAlvo) {
+            document.getElementById('prod-ean').value = codigoEan;
+            document.getElementById('prod-ean').setAttribute('readonly', true); 
+            
+            document.getElementById('prod-nome').value = descrNome;
+            document.getElementById('prod-fornecedor').value = nmForn;
+            document.getElementById('prod-atual').value = qtAtual;
+            document.getElementById('prod-alvo').value = qtAlvo;
+            
+            document.getElementById('btn-cancelar').style.display = 'inline-block';
+            document.getElementById('btn-salvar').innerText = 'Salvar Alterações';
+            document.getElementById('sec-estoque').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function removerItem(codEan) {
+            if (confirm('Confirmar exclusão no banco de dados?')) {
+                fetch(`http://localhost:3000/produtos/${codEan}`, { 
+                    method: 'DELETE', 
+                    headers: montarCabecalho() 
+                })
+                .then(r => { 
+                    if(r.ok) { 
+                        carregarEstoque(); 
+                        carregarAlertas(); 
+                    } 
+                });
+            }
+        }
+
+        function limparFormulario() {
+            document.getElementById('form-produto').reset();
+            document.getElementById('prod-ean').removeAttribute('readonly');
+            document.getElementById('btn-cancelar').style.display = 'none';
+            document.getElementById('btn-salvar').innerText = 'Salvar Cadastro';
+        }
+    </script>
+</body>
+</html>

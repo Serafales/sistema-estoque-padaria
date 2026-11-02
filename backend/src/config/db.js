@@ -16,17 +16,31 @@ async function inicializarBanco() {
             estoque_atual INTEGER DEFAULT 0,
             estoque_alvo INTEGER NOT NULL
         );
-
         CREATE TABLE IF NOT EXISTS historico (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ean TEXT,
             nome_produto TEXT,
             acao TEXT,
+            usuario TEXT,
             data_hora DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            senha TEXT NOT NULL,
+            perfil TEXT NOT NULL
         );
     `);
 
-    console.log("Banco de dados conectado.");
+    const admin = await db.get("SELECT id FROM usuarios WHERE username = 'admin'");
+    
+    if (!admin) {
+        await db.run("INSERT INTO usuarios (username, senha, perfil) VALUES ('admin', '1234', 'admin')");
+        await db.run("INSERT INTO usuarios (username, senha, perfil) VALUES ('estoque', '1234', 'estoquista')");
+        console.log("Seed de usuários rodou.");
+    }
+
+    console.log("DB SQLite pronto.");
     return db;
 }
 
